@@ -1253,6 +1253,7 @@ module Base = struct
                  _ (* This is for the snapp to use, we don't need it. *)
              ; sequence_events
              ; depth = _ (* This is used to build the 'stack of stacks'. *)
+             ; protocol_state = _
              }
          ; predicate = _
          } :
@@ -1721,6 +1722,8 @@ module Base = struct
           type t = party
 
           let delta (t : t) = t.party.data.body.delta
+
+          let protocol_state (t : t) = t.party.data.body.protocol_state
         end
 
         module Account = struct
@@ -1770,6 +1773,10 @@ module Base = struct
           let default = Token_id.(var_of_t default)
 
           let invalid = Token_id.(var_of_t invalid)
+        end
+
+        module Protocol_state_predicate = struct
+          type t = Snapp_predicate.Protocol_state.Checked.t
         end
       end
 
@@ -4458,6 +4465,7 @@ let%test_module "transaction_snark" =
                   ; sequence_events = []
                   ; call_data = Field.zero
                   ; depth = 0
+                  ; protocol_state = Snapp_predicate.Protocol_state.accept
                   }
               ; predicate = acct1.account.nonce
               }
@@ -4475,6 +4483,7 @@ let%test_module "transaction_snark" =
                     ; sequence_events = []
                     ; call_data = Field.zero
                     ; depth = 0
+                    ; protocol_state = Snapp_predicate.Protocol_state.accept
                     }
                 ; predicate = Accept
                 }
@@ -4894,6 +4903,8 @@ let%test_module "transaction_snark" =
                             ; sequence_events = []
                             ; call_data = Field.zero
                             ; depth = 0
+                            ; protocol_state =
+                                Snapp_predicate.Protocol_state.accept
                             }
                         ; predicate = sender_nonce
                         }
@@ -4912,6 +4923,7 @@ let%test_module "transaction_snark" =
                         ; sequence_events = []
                         ; call_data = Field.zero
                         ; depth = 0
+                        ; protocol_state = Snapp_predicate.Protocol_state.accept
                         }
                     ; predicate = Nonce (Account.Nonce.succ sender_nonce)
                     }
@@ -4927,6 +4939,7 @@ let%test_module "transaction_snark" =
                         ; sequence_events = []
                         ; call_data = Field.zero
                         ; depth = 0
+                        ; protocol_state = Snapp_predicate.Protocol_state.accept
                         }
                     ; predicate = Full Snapp_predicate.Account.accept
                     }
@@ -5209,6 +5222,8 @@ let%test_module "transaction_snark" =
                             ; sequence_events = []
                             ; call_data = Field.zero
                             ; depth = 0
+                            ; protocol_state =
+                                Snapp_predicate.Protocol_state.accept
                             }
                         ; predicate = sender_nonce
                         }
@@ -5227,6 +5242,7 @@ let%test_module "transaction_snark" =
                         ; sequence_events = []
                         ; call_data = Field.zero
                         ; depth = 0
+                        ; protocol_state = Snapp_predicate.Protocol_state.accept
                         }
                     ; predicate = Nonce (Account.Nonce.succ sender_nonce)
                     }
@@ -5242,6 +5258,7 @@ let%test_module "transaction_snark" =
                         ; sequence_events = []
                         ; call_data = Field.zero
                         ; depth = 0
+                        ; protocol_state = Snapp_predicate.Protocol_state.accept
                         }
                     ; predicate = Full Snapp_predicate.Account.accept
                     }

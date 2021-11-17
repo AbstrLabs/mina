@@ -284,7 +284,7 @@ let gen_party_body (type a b) ?account_id ?balances_tbl ?(new_account = false)
     ?(snapp_account = false) ?(is_fee_payer = false) ?available_public_keys
     ~(gen_delta : Account.t -> a Quickcheck.Generator.t)
     ~(f_delta : a -> Currency.Amount.Signed.t) ~(increment_nonce : b) ~ledger ()
-    : (_, _, _, a, _, _, _, b) Party.Body.Poly.t Quickcheck.Generator.t =
+    : (_, _, _, a, _, _, _, b, _) Party.Body.Poly.t Quickcheck.Generator.t =
   let open Quickcheck.Let_syntax in
   (* ledger may contain non-Snapp accounts, so if we want a Snapp account,
      must generate a new one
@@ -444,6 +444,7 @@ let gen_party_body (type a b) ?account_id ?balances_tbl ?(new_account = false)
   let%map call_data = Snark_params.Tick.Field.gen in
   (* update the depth when generating `other_parties` in Parties.t *)
   let depth = 0 in
+  let protocol_state = Snapp_predicate.Protocol_state.accept in
   { Party.Body.Poly.pk
   ; update
   ; token_id
@@ -453,6 +454,7 @@ let gen_party_body (type a b) ?account_id ?balances_tbl ?(new_account = false)
   ; sequence_events
   ; call_data
   ; depth
+  ; protocol_state
   }
 
 let gen_predicated_from ?(succeed = true) ?(new_account = false)
