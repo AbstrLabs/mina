@@ -108,7 +108,7 @@ module Configuration = struct
     let of_span = Fn.compose Int64.to_int Block_time.Span.to_ms in
     { delta = of_int32 constants.delta
     ; k = of_int32 constants.k
-    ; slots_per_epoch = of_int32 constants.epoch_size
+    ; slots_per_epoch = of_int32 constants.slots_per_epoch
     ; slot_duration = of_span constants.slot_duration_ms
     ; epoch_duration = of_span constants.epoch_duration
     ; genesis_state_timestamp = constants.genesis_state_timestamp
@@ -3168,7 +3168,7 @@ module Hooks = struct
             ~finish:(fun () -> None)
         in
         let rec find_winning_slot (slot : Slot.t) =
-          if UInt32.compare slot constants.epoch_size >= 0 then
+          if UInt32.compare slot constants.slots_per_epoch >= 0 then
             Deferred.return None
           else
             match%bind
