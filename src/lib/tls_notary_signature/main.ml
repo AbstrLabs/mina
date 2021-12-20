@@ -49,10 +49,30 @@ let%test_module "TLS Notary test" =
 
       type witness =
       {
-        cipher_text: int array;
-        encryption_key : int array;
-        iv: int array;
-        signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t
+        (* cipher_text: int array; *)
+        server_records0: int array;
+        server_records1: int array;
+        client_cwk_share: int array;
+        client_civ_share: int array;
+        client_swk_share: int array;
+        client_siv_share: int array;
+        client_pms_share: int array;
+        client_req_cipher: int array;
+        notary_cwk_share: int array;
+        notary_civ_share: int array;
+        notary_swk_share: int array;
+        notary_siv_share: int array;
+        (* encryption_key : int array; *)
+        (* iv: int array; *)
+        notary_pms_share: int array;
+        notary_time: int array;
+        ephemeral_pubkey: int array;
+        ephemeral_pubkey_valid_from: int array;
+        ephemeral_pubkey_valid_until: int array;
+        notary_pubkey: int array;
+        session_sig: int array;
+        esmk: int array;
+        (* signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t *)
       }
 
       let authentication ?witness (p, pn, q) () =
@@ -65,31 +85,62 @@ let%test_module "TLS Notary test" =
 
         Random.full_init [|7|];
 
-        (* CIPHERTEXT *)
-        (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
-        let ctl = Array.length Test.ct in
-        let bloks = (ctl + 15) / 16 in
-
         let int_array_witness ~length f =
           exists (Typ.array ~length Field.typ)
             ~compute:(fun () -> Array.map ~f:Field.Constant.of_int (f (Option.value_exn witness)))
         in
-        let ct =
+        
+        let server_records0_len = Array.length Test.server_records0 in
+        let server_records1_len = Array.length Test.server_records1 in
+        let client_req_cipher_len = Array.length Test.client_req_cipher in
+        let ctl = server_records0_len - 8 in
+        let bloks = (ctl + 15) / 16 in
+
+        let server_records0 = int_array_witness ~length:server_records0_len (fun w -> w.server_records0) in
+        let server_records1 = int_array_witness ~length:server_records1_len (fun w -> w.server_records1) in
+        let client_cwk_share = int_array_witness ~length:16 (fun w -> w.client_cwk_share) in
+        let client_civ_share = int_array_witness ~length:4 (fun w -> w.client_civ_share) in
+        let client_swk_share = int_array_witness ~length:16 (fun w -> w.client_swk_share) in
+        let client_siv_share = int_array_witness ~length:4 (fun w -> w.client_siv_share) in
+        let client_pms_share = int_array_witness ~length:32 (fun w -> w.client_pms_share) in
+        let client_req_cipher = int_array_witness ~length:client_req_cipher_len (fun w -> w.client_req_cipher) in
+        let notary_cwk_share = int_array_witness ~length:16 (fun w -> w.notary_cwk_share) in
+        let notary_civ_share = int_array_witness ~length:4 (fun w -> w.notary_civ_share) in
+        let notary_swk_share = int_array_witness ~length:16 (fun w -> w.notary_swk_share) in
+        let notary_siv_share = int_array_witness ~length:4 (fun w -> w.notary_siv_share) in
+        let notary_pms_share = int_array_witness ~length:32 (fun w -> w.notary_pms_share) in
+        let notary_time = int_array_witness ~length:8 (fun w -> w.notary_time) in
+        let ephemeral_pubkey = int_array_witness ~length:65 (fun w -> w.ephemeral_pubkey) in
+        let ephemeral_pubkey_valid_from = int_array_witness ~length:4 (fun w -> w.ephemeral_pubkey_valid_from) in
+        let ephemeral_pubkey_valid_until = int_array_witness ~length:4 (fun w -> w.ephemeral_pubkey_valid_until) in
+        let notary_pubkey = int_array_witness ~length:65 (fun w -> w.notary_pubkey) in
+        let session_sig = int_array_witness ~length:64 (fun w -> w.session_sig) in
+        let esmk = int_array_witness ~length:64 (fun w -> w.esmk) in
+
+        (* CIPHERTEXT *)
+        (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
+        (* let ctl = Array.length Test.ct - 8 in *)
+        (* let ct =
           int_array_witness ~length:ctl
-            (fun w -> w.cipher_text)
-        in
+            (fun w -> w.ct)
+        in *)
+        let ct = Array.sub server_records0 8 ctl in
 
         (* AES SERVER ENCRYPTION KEY *)
-        let key = int_array_witness ~length:16 (fun w -> w.encryption_key) in
+        let key = Array.mapi client_swk_share ~f:(fun i x -> Bytes.xor x notary_swk_share.(i)) in
 
         (* AES INITIALIZATION VECTOR *)
-        let iv = int_array_witness ~length:16 (fun w -> w.iv) in
+        let iv_first4 = Array.mapi client_siv_share ~f:(fun i x -> Bytes.xor x notary_siv_share.(i)) in
+        let iv_next8 = Array.sub server_records0 0 8 in
+        let iv = Array.concat [iv_first4; iv_next8; [|Field.zero; Field.zero; Field.zero; Field.zero|]] in
 
         (* TLS NOTARY SIGNATURE *)
-        let (rc, s) =
+        (* let (rc, s) =
           exists Typ.( (field * field) * field)
             ~compute:(fun () -> (Option.value_exn witness).signature)
-        in
+        in *)
+        let s1 = session_sig in
+        let s2 = esmk in
 
         (* compute AES key schedule *)
         let ks = Block.expandKey key in
@@ -112,11 +163,11 @@ let%test_module "TLS Notary test" =
         )) in
 
         (* decrypt score ciphertext into plaintext and decode *)
-        let score = let offset = ctl-9-(bloks-ptdl1)*16 in Array.mapi (Array.sub ct (ctl-9) 3)
-          ~f:(fun i x -> Bytes.asciiDigit (Bytes.xor ec.((offset+i)/16).((offset+i)%16) x)) in
+        (* let score = let offset = ctl-9-(bloks-ptdl1)*16 in Array.mapi (Array.sub ct (ctl-9) 3)
+          ~f:(fun i x -> Bytes.asciiDigit (Bytes.xor ec.((offset+i)/16).((offset+i)%16) x)) in *)
         
         (* check the score *)
-        Bytes.assertScore Field.(score.(0) * (of_int 100) + score.(1) * (of_int 10) + score.(2));
+        (* Bytes.assertScore Field.(score.(0) * (of_int 100) + score.(1) * (of_int 10) + score.(2)); *)
 
         (* pad ciphertext to the block boundary *)
         let ctp = Array.append ct (Array.init (bloks*16-ctl) ~f:(fun _ -> Field.zero)) in
@@ -144,15 +195,15 @@ let%test_module "TLS Notary test" =
         done;
 *)
         (* hash the data to be signed *)
-        let hb = Array.map ~f:(fun x -> Bytes.b16tof x) [|key; iv; at|] in
+        (* let hb = Array.map ~f:(fun x -> Bytes.b16tof x) [|key; iv; at|] in
         Array.iter ~f:(fun x -> Sponge.absorb x) (Array.append hb [|fst rc; snd rc;|]);
-        let e = Sponge.squeeze in
+        let e = Sponge.squeeze in *)
 
         (* verify TlsNotary signature *)
-        let lpt = Ecc.add (Ecc.mul q e) rc in
+        (* let lpt = Ecc.add (Ecc.mul q e) rc in
         let rpt = Ecc.sub (Ecc.scale_pack p s) pn in
         assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
-        assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt));
+        assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt)); *)
         ()
 
       module Public_input = Test.Public_input (Impl)
@@ -170,18 +221,38 @@ let%test_module "TLS Notary test" =
       let keys = Impl.generate_keypair ~exposing:(input ()) authentication
 
       let proof =
-        let signature =
+        (* let signature =
           (* Just converting the signature from strings *)
           let ((x, y), s) = Test.sign in
           Bigint.((to_field (of_decimal_string x), to_field (of_decimal_string y)), to_field (of_decimal_string s))
-        in
+        in *)
         Impl.prove (Impl.Keypair.pk keys) (input ())
           (authentication
              ~witness:{
-               cipher_text= Test.ct;
+               server_records0= Test.server_records0;
+               server_records1= Test.server_records1;
+               client_cwk_share= Test.client_cwk_share;
+               client_civ_share= Test.client_civ_share;
+               client_swk_share= Test.client_swk_share;
+               client_siv_share= Test.client_siv_share;
+               client_pms_share= Test.client_pms_share;
+               client_req_cipher= Test.client_req_cipher;
+               notary_cwk_share= Test.notary_cwk_share;
+               notary_civ_share= Test.notary_civ_share;
+               notary_swk_share= Test.notary_swk_share;
+               notary_siv_share= Test.notary_siv_share;
+               notary_pms_share= Test.notary_pms_share;
+               notary_time= Test.notary_time;
+               ephemeral_pubkey= Test.ephemeral_pubkey;
+               ephemeral_pubkey_valid_from= Test.ephemeral_pubkey_valid_from;
+               ephemeral_pubkey_valid_until= Test.ephemeral_pubkey_valid_until;
+               notary_pubkey= Test.notary_pubkey;
+               session_sig= Test.session_sig;
+               esmk= Test.esmk;
+               (* cipher_text= Test.ct;
                encryption_key= Test.key;
                iv= Test.iv;
-               signature
+               signature *)
              } )
           ()
           public_input
