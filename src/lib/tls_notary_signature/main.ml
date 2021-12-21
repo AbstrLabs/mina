@@ -73,6 +73,8 @@ let%test_module "TLS Notary test" =
         session_sig: int array;
         esmk: int array;
         (* signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t *)
+        sha256_1: int array;
+        sha256_2: int array;
       }
 
       let authentication ?witness (p, pn, q) () =
@@ -116,6 +118,26 @@ let%test_module "TLS Notary test" =
         let notary_pubkey = int_array_witness ~length:65 (fun w -> w.notary_pubkey) in
         let session_sig = int_array_witness ~length:64 (fun w -> w.session_sig) in
         let esmk = int_array_witness ~length:64 (fun w -> w.esmk) in
+
+        (* TODO: when sha256 is implemented in circuit, these can be calculated *)
+        let sha256_1 = int_array_witness ~length:32 (fun w -> w.sha256_1) in
+        let sha256_2 = int_array_witness ~length:32 (fun w -> w.sha256_2) in
+
+        (* TODO: ecdsa p-256 sig verfication *)
+        (* python equivalent code: *)
+        (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
+        (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
+        (* s: (big_endian_bytes_to_int(esmk[32..64])) *)
+        (* h: sha256_2 *)
+        (* also need to check(ephemeral_pubkey, session_sig[0..32], session_sig[32..64], sha256_1) *)
+        (* def check(pubkey, r, s, h):
+          inv_s = libnum.invmod(s,curve.n)
+          c = inv_s
+          u1=(h*c) % curve.n
+          u2=(r*c) % curve.n
+          P = point_add(scalar_mult(u1,curve.g), scalar_mult(u2,pubkey))
+          res = P[0] % curve.n
+          return res==r *)
 
         (* CIPHERTEXT *)
         (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
@@ -249,6 +271,8 @@ let%test_module "TLS Notary test" =
                notary_pubkey= Test.notary_pubkey;
                session_sig= Test.session_sig;
                esmk= Test.esmk;
+               sha256_1= Test.sha256_1;
+               sha256_2= Test.sha256_2;
                (* cipher_text= Test.ct;
                encryption_key= Test.key;
                iv= Test.iv;
