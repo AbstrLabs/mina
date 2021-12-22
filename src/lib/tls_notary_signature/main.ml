@@ -122,6 +122,33 @@ let%test_module "TLS Notary test" =
         (* TODO: when sha256 is implemented in circuit, these can be calculated *)
         let sha256_1 = int_array_witness ~length:32 (fun w -> w.sha256_1) in
         let sha256_2 = int_array_witness ~length:32 (fun w -> w.sha256_2) in
+        
+        let n = Field.Constant.of_string "115792089210356248762697446949407573529996955224135760342422259061068512044369" in
+        let _ = (Printf.printf "=== %s\n" (Field.Constant.to_string n)) in
+        let rec invmod ~(k:Field.t) ~(p:Field.t) : Field.t =
+          if k < Field.zero then (Field.(-) p (invmod ~k:(Field.(-) Field.zero k) ~p:p))
+          else (
+            let s = ref Field.zero in
+            let old_s = ref Field.one in
+            let t = ref Field.one in
+            let old_t = ref Field.zero in
+            let r = ref p in
+            let old_r = ref k in
+            while (Boolean.var_of_value false) == (Field.equal !r Field.zero) do
+                let quotient = Field.(/) !old_r !r in
+                old_r := !r;
+                r := Field.(-) !old_r (Field.( * ) quotient !r);
+                old_s := !s;
+                s := Field.(-) !old_s (Field. ( * ) quotient !s);
+                old_t := !t;
+                t := Field.(-) !old_t (Field . ( * ) quotient !t)
+            done;
+            Field.(-) !old_s (Field.(/) !old_s p)
+          ) in
+          
+          
+        (* let ecdsa_p256_sig_check ~pubkey ~r ~s ~h =
+          let inv_s =  *)
 
         (* TODO: ecdsa p-256 sig verfication *)
         (* python equivalent code: *)
@@ -226,6 +253,9 @@ let%test_module "TLS Notary test" =
         let rpt = Ecc.sub (Ecc.scale_pack p s) pn in
         assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
         assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt)); *)
+        let test_s = Field.Constant.of_string "86010965201271384069584565278387931067403690992144386669414930219218076294718" in
+        let test_inv_s = Field.Constant.of_string "103687126430046668123400787655982508408237521893610743075748122051083635961644" in
+        assert_ (Snarky.Constraint.equal (invmod ~k:(Field.constant test_s) ~p:(Field.constant n)) (Field.constant test_inv_s));
         ()
 
       module Public_input = Test.Public_input (Impl)
