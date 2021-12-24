@@ -135,28 +135,18 @@ let%test_module "TLS Notary test" =
         let m1 = Field.mul (Field.mul m5 m6) m6 in
         let n = List.fold_right [(Field.mul n7 m7); (Field.mul n6 m6); (Field.mul n5 m5); (Field.mul n1 m1)] ~f:Field.add ~init:n8 in
         (* let _ = (Printf.printf "=== %s\n" (Field. (Field.to_constant n)) in *)
-        let rec invmod ~(k:Field.t) ~(p:Field.t) : Field.t =
-          if k < Field.zero then (Field.(-) p (invmod ~k:(Field.(-) Field.zero k) ~p:p))
-          else (
-            let s = ref Field.zero in
-            let old_s = ref Field.one in
-            let t = ref Field.one in
-            let old_t = ref Field.zero in
-            let r = ref p in
-            let old_r = ref k in
-            while (Boolean.var_of_value false) == (Field.equal !r Field.zero) do
-                let quotient = Field.(/) !old_r !r in
-                old_r := !r;
-                r := Field.(-) !old_r (Field.( * ) quotient !r);
-                old_s := !s;
-                s := Field.(-) !old_s (Field. ( * ) quotient !s);
-                old_t := !t;
-                t := Field.(-) !old_t (Field . ( * ) quotient !t)
-            done;
-            Field.(-) !old_s (Field.(/) !old_s p)
-          ) in
-          
-          
+        let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in
+        let modu a b =
+          Field.sub a (Field.mul (Field.div a b) b) in
+        let rec gcd_ext a b =
+          if Field.zero = b then (Field.one, Field.zero, a)
+          else let s, t, g = gcd_ext b (modu a b) in
+              (t, Field.sub s (Field.mul (Field.div a b) t), g) in
+        let invmod a m =
+          let mk_pos x = if x < Field.zero then Field.add x m else x in
+          let i,_,r = gcd_ext a m in
+          if r = Field.one then mk_pos i else failwith "invmod" in
+
         (* let ecdsa_p256_sig_check ~pubkey ~r ~s ~h =
           let inv_s =  *)
 
@@ -269,10 +259,11 @@ let%test_module "TLS Notary test" =
         let test_s_list = (Field.var_indices test_s) in
         let _ = List.iter [3;4] ~f:(fun a -> (print_endline (string_of_int a))) in
         let _ = List.iter test_s_list ~f:(fun a -> (print_endline (string_of_int a))) in
-        let _ = List.iter [1;2] ~f:(fun a -> (print_endline (string_of_int a))) in
-        let _ = Printf.printf "aaaaaaaaaa\n" in
+        let l = (Field.Constant.unpack n) in
+        let _ = List.iter l ~f:(fun a -> (print_endline (string_of_int (if a then 1 else 0)))) in
+        (* let _ = Printf.printf "aaaaaaaaaa %d \n" ) in *)
         (* (let _ = (pp_print_list )) *)
-        assert_ (Snarky.Constraint.equal (invmod ~k:test_s ~p:n) (Field.constant test_inv_s));
+        assert_ (Snarky.Constraint.equal (invmod test_s (Field.constant n)) (Field.constant test_inv_s));
         ()
 
       module Public_input = Test.Public_input (Impl)
