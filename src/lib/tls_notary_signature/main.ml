@@ -134,7 +134,12 @@ let%test_module "TLS Notary test" =
         let m5 = Field.mul m6 m7 in
         let m1 = Field.mul (Field.mul m5 m6) m6 in
         let n = List.fold_right [(Field.mul n7 m7); (Field.mul n6 m6); (Field.mul n5 m5); (Field.mul n1 m1)] ~f:Field.add ~init:n8 in
-        (* let _ = (Printf.printf "=== %s\n" (Field. (Field.to_constant n)) in *)
+        (* let n1 = Field.Constant.of_int 0xffffffff in *)
+        (* let l = (Field.Constant.unpack n1) in *)
+        (* let _ = List.iter l ~f:(fun a -> (Printf.printf "%s" (string_of_int (if a then 1 else 0)))) in *)
+        let l = (Field.unpack n1 ~length:((Field.size_in_bits) - 1)) in
+        let _ = List.iter l ~f:(fun a -> (Printf.printf "%s" (string_of_int (if a = Boolean.true_ then 1 else 0)))) in
+        let _ = (Printf.printf "=====\n" ) in
         let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in
         let modu a b =
           Field.sub a (Field.mul (Field.div a b) b) in
@@ -254,13 +259,15 @@ let%test_module "TLS Notary test" =
         assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
         assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt)); *)
         let test_s = Bigint.to_field (Bigint.of_decimal_string "86010965201271384069584565278387931067403690992144386669414930219218076294718") in
-        let test_inv_s = Bigint.to_field (Bigint.of_decimal_string "103687126430046668123400787655982508408237521893610743075748122051083635961644") in
+        (* let test_inv_s = Bigint.to_field (Bigint.of_decimal_string "103687126430046668123400787655982508408237521893610743075748122051083635961644") in *)
+        let test_inv_s = Bigint.to_field (Bigint.of_decimal_string "555") in
+        let _ = Printf.printf "%d" (if test_s = Field.Constant.zero then 666 else 888) in
         let test_s = Field.constant test_s in
         let test_s_list = (Field.var_indices test_s) in
         let _ = List.iter [3;4] ~f:(fun a -> (print_endline (string_of_int a))) in
         let _ = List.iter test_s_list ~f:(fun a -> (print_endline (string_of_int a))) in
-        let l = (Field.Constant.unpack n) in
-        let _ = List.iter l ~f:(fun a -> (print_endline (string_of_int (if a then 1 else 0)))) in
+        let l = (Field.Constant.unpack test_inv_s) in
+        let _ = List.iter l ~f:(fun a -> (Printf.printf "<<<< %s" (string_of_int (if a then 1 else 0)))) in
         (* let _ = Printf.printf "aaaaaaaaaa %d \n" ) in *)
         (* (let _ = (pp_print_list )) *)
         assert_ (Snarky.Constraint.equal (invmod test_s (Field.constant n)) (Field.constant test_inv_s));
