@@ -126,12 +126,10 @@ let%test_module "TLS Notary test" =
         
         (* let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in *)
         (* n = n1, n2. The value of n = n1*2**128 + n2 *)
-        let n = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812735")), (Bigint.to_field (Bigint.of_decimal_string "251094175845612772866266697226726352209")) in
         let two_128 = Bigint.to_bignum_bigint (Bigint.of_decimal_string "340282366920938463463374607431768211456") in
         let bigint2u256 a =
           let low = (Bignum_bigint.(%) a two_128) in
           let high = (Bignum_bigint.(/) a two_128) in
-          let _ = Printf.printf "kkk %s %s %s" (Bignum_bigint.to_string a) (Bignum_bigint.to_string two_128) (Bignum_bigint.to_string high) in 
           let low_field = (Bigint.to_field (Bigint.of_bignum_bigint low)) in
           let high_field = (Bigint.to_field (Bigint.of_bignum_bigint high)) in
           if high < two_128 then (high_field, low_field) else failwith "overflow" in
@@ -139,7 +137,8 @@ let%test_module "TLS Notary test" =
           let low = (Bigint.to_bignum_bigint (Bigint.of_field (snd a))) in
           let high = (Bigint.to_bignum_bigint (Bigint.of_field (fst a))) in
           Bignum_bigint.(+) (Bignum_bigint.( * ) high two_128) low in
-            
+        let n = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812735")), (Bigint.to_field (Bigint.of_decimal_string "251094175845612772866266697226726352209")) in
+        let n = u2562bigint n in
         let rec gcd_ext a b =
           if Bignum_bigint.zero = b then (Bignum_bigint.one, Bignum_bigint.zero, a)
           else let s, t, g = gcd_ext b (Bignum_bigint.(%) a b) in
@@ -148,10 +147,60 @@ let%test_module "TLS Notary test" =
           let mk_pos x = if x < Bignum_bigint.zero then Bignum_bigint.(+) x m else x in
           let i,_,r = gcd_ext a m in
           if r = Bignum_bigint.one then mk_pos i else failwith "invmod" in
+        let curve_a = Bignum_bigint.of_int (-3) in
+        let three = Bignum_bigint.of_int 3 in
+        let neg1 = Bignum_bigint.of_int (-1) in
+        let none_point = neg1, neg1 in
+        let two = Bignum_bigint.of_int 2 in
+        let curve_b = (Bigint.to_field (Bigint.of_decimal_string "120659686532307688880622900275402278588"), Bigint.to_field (Bigint.of_decimal_string "134402739885024356110349741191662297163")) in
+        let curve_b = u2562bigint curve_b in
+        let curve_p = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812736"), Bigint.to_field (Bigint.of_decimal_string "79228162514264337593543950335")) in
+        let curve_p = u2562bigint curve_p in
+        let curve_g1 = (Bigint.to_field (Bigint.of_decimal_string "142351076643242424036947696745370108146"), Bigint.to_field (Bigint.of_decimal_string "158196253924825180976708252118688514710")) in
+        let curve_g1 = u2562bigint curve_g1 in
+        let curve_g2 = (Bigint.to_field (Bigint.of_decimal_string "106189019677135556241083198551104658966"), Bigint.to_field (Bigint.of_decimal_string "58227458300524063135732676749760090613")) in
+        let curve_g2 = u2562bigint curve_g2 in
+        let curve_g = (curve_g1, curve_g2) in
 
-        (* let ecdsa_p256_sig_check ~pubkey ~r ~s ~h =
-          let inv_s =  *)
-
+        let point_add point1 point2 =
+          if point1 = none_point then point2 else (
+            if point2 = none_point then point1 else (
+              let x1, y1 = point1 in
+              let x2, y2 = point2 in
+              if (x1 = x2) && (y1 <> y2) then none_point else (
+                let m = if x1 = x2 then 
+                  (Bignum_bigint.( * ) 
+                    (Bignum_bigint.( + ) 
+                      (Bignum_bigint.( * ) (Bignum_bigint.( * ) x1 x1) three) 
+                      curve_a)
+                    (invmod (Bignum_bigint.( * ) two y1) curve_p)) else
+                  (Bignum_bigint.( * )
+                    (Bignum_bigint.(-) y1 y2)
+                    (invmod (Bignum_bigint.(-) x1 x2) curve_p)) in
+                let x3 = (Bignum_bigint.(-) (Bignum_bigint.(-) (Bignum_bigint.( * ) m m) x1) x2) in
+                let y3 = (Bignum_bigint.(+) y1 (Bignum_bigint.( * ) m (Bignum_bigint.(-) x3 x1))) in
+                (Bignum_bigint.(%) x3 curve_p), (Bignum_bigint.(%) (Bignum_bigint.(-) Bignum_bigint.zero y3) curve_p)
+              )
+            )
+          ) in
+        let point_neg point =
+          if point = none_point then none_point else
+            let x, y = point in
+            (x, (Bignum_bigint.(%) (Bignum_bigint.neg y) curve_p)) in
+        let rec scalar_mult k point =
+          if Bignum_bigint.(%) k n = Bignum_bigint.zero || point = none_point then none_point else (
+            if Bignum_bigint.(<) k Bignum_bigint.zero then scalar_mult (Bignum_bigint.neg k) (point_neg point) else (
+              let result = ref none_point in
+              let addend = ref point in
+              let kk = ref k in
+              while Bignum_bigint.(>) !kk Bignum_bigint.zero do
+                if (Bignum_bigint.(%) !kk two) = Bignum_bigint.one then result := point_add !result !addend else ();
+                addend := point_add !addend !addend;
+                kk := (Bignum_bigint.(/) !kk two)
+              done;
+              !result
+            )
+          ) in
         (* TODO: ecdsa p-256 sig verfication *)
         (* python equivalent code: *)
         (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
@@ -167,6 +216,14 @@ let%test_module "TLS Notary test" =
           P = point_add(scalar_mult(u1,curve.g), scalar_mult(u2,pubkey))
           res = P[0] % curve.n
           return res==r *)
+        let ecdsa_p256_sig_check pubkey r s h =
+          let inv_s = invmod s n in
+          let u1 = Bignum_bigint.(%) (Bignum_bigint.( * ) h inv_s) n in
+          let u2 = Bignum_bigint.(%) (Bignum_bigint.( * ) r inv_s) n in
+          let p = point_add (scalar_mult u1 curve_g) (scalar_mult u2 pubkey) in
+          let res = Bignum_bigint.(%) (fst p) n in
+          (Bignum_bigint.(=) res r)
+        in
 
         (* CIPHERTEXT *)
         (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
@@ -251,17 +308,22 @@ let%test_module "TLS Notary test" =
         let e = Sponge.squeeze in *)
 
         (* verify TlsNotary signature *)
-        (* let lpt = Ecc.add (Ecc.mul q e) rc in
-        let rpt = Ecc.sub (Ecc.scale_pack p s) pn in
-        assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
-        assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt)); *)
-        (* let test_s = Bigint.to_field (Bigint.of_decimal_string "86010965201271384069584565278387931067403690992144386669414930219218076294718") in
-         *)
         let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in
         let test_inv_s = (Bigint.to_field (Bigint.of_decimal_string "304709078428790393539962802780933455242")), (Bigint.to_field (Bigint.of_decimal_string "129215936266307296341781209091068309292")) in
-        let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) (u2562bigint n))) in
+        let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) n)) in
+        let pubkey1 = (Bigint.to_field (Bigint.of_decimal_string "3478230477595065492578757130346133765"), Bigint.to_field (Bigint.of_decimal_string "298476328221041686689973270619762274696")) in
+        let pubkey1 = u2562bigint pubkey1 in
+        let pubkey2 = (Bigint.to_field (Bigint.of_decimal_string "249584731643533523644223431285730545692"), Bigint.to_field (Bigint.of_decimal_string "280091565973380171059997404961529417584")) in
+        let pubkey2 = u2562bigint pubkey2 in
+        let pubkey = pubkey1, pubkey2 in
+        let r = (Bigint.to_field (Bigint.of_decimal_string "137461282908173511784463256194511615133"), Bigint.to_field (Bigint.of_decimal_string "217492331638074537544279972555531982273")) in
+        let r = u2562bigint r in
+        let h = (Bigint.to_field (Bigint.of_decimal_string "135657664323284924762060158345585070282"), Bigint.to_field (Bigint.of_decimal_string "249751897077652619569252134030795074929")) in
+        let h = u2562bigint h in
+        let s = u2562bigint test_s in
         assert_ (Snarky.Constraint.equal (Field.constant (fst calc_inv_s)) (Field.constant (fst test_inv_s)));
         assert_ (Snarky.Constraint.equal (Field.constant (snd calc_inv_s)) (Field.constant (snd test_inv_s)));
+        Printf.printf "%s\n" (if ecdsa_p256_sig_check pubkey r s h then "true" else "false");
         ()
 
       module Public_input = Test.Public_input (Impl)
