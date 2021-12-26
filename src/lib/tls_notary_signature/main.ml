@@ -201,28 +201,23 @@ let%test_module "TLS Notary test" =
               !result
             )
           ) in
-        (* TODO: ecdsa p-256 sig verfication *)
-        (* python equivalent code: *)
+        (* ecdsa p-256 sig verfication *)
         (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
         (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
         (* s: (big_endian_bytes_to_int(esmk[32..64])) *)
         (* h: sha256_2 *)
         (* also need to check(ephemeral_pubkey, session_sig[0..32], session_sig[32..64], sha256_1) *)
-        (* def check(pubkey, r, s, h):
-          inv_s = libnum.invmod(s,curve.n)
-          c = inv_s
-          u1=(h*c) % curve.n
-          u2=(r*c) % curve.n
-          P = point_add(scalar_mult(u1,curve.g), scalar_mult(u2,pubkey))
-          res = P[0] % curve.n
-          return res==r *)
         let ecdsa_p256_sig_check pubkey r s h =
           let inv_s = invmod s n in
           let u1 = Bignum_bigint.(%) (Bignum_bigint.( * ) h inv_s) n in
           let u2 = Bignum_bigint.(%) (Bignum_bigint.( * ) r inv_s) n in
           let p = point_add (scalar_mult u1 curve_g) (scalar_mult u2 pubkey) in
           let res = Bignum_bigint.(%) (fst p) n in
-          (Bignum_bigint.(=) res r)
+          let r = bigint2u256 r in
+          let res = bigint2u256 res in (
+          assert_ (Snarky.Constraint.equal (Field.constant (fst res)) (Field.constant (fst r)));
+          assert_ (Snarky.Constraint.equal (Field.constant (snd res)) (Field.constant (snd r)));
+          )
         in
 
         (* CIPHERTEXT *)
@@ -323,7 +318,7 @@ let%test_module "TLS Notary test" =
         let s = u2562bigint test_s in
         assert_ (Snarky.Constraint.equal (Field.constant (fst calc_inv_s)) (Field.constant (fst test_inv_s)));
         assert_ (Snarky.Constraint.equal (Field.constant (snd calc_inv_s)) (Field.constant (snd test_inv_s)));
-        Printf.printf "%s\n" (if ecdsa_p256_sig_check pubkey r s h then "true" else "false");
+        ecdsa_p256_sig_check pubkey r s h;
         ()
 
       module Public_input = Test.Public_input (Impl)
