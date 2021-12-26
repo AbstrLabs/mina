@@ -46,6 +46,7 @@ let%test_module "TLS Notary test" =
     = struct
       open Core
       open Impl
+      open Snarky.Snark_intf
 
       type witness =
       {
@@ -123,34 +124,30 @@ let%test_module "TLS Notary test" =
         let sha256_1 = int_array_witness ~length:32 (fun w -> w.sha256_1) in
         let sha256_2 = int_array_witness ~length:32 (fun w -> w.sha256_2) in
         
-        (* let n = Field.Constant.of_string "115792089210356248762697446949407573529996955224135760342422259061068512044369" in *)
-        let n1 = Field.of_int 0xffffffff in
-        let n5 = Field.of_int 0xBCE6FAAD in
-        let n6 = Field.of_int 0xA7179E84 in
-        let n7 = Field.of_int 0xF3B9CAC2 in
-        let n8 = Field.of_int 0xFC632551 in
-        let m7 = Field.( * ) (Field.of_int 0x10000000) (Field.of_int 0x10) in
-        let m6 = Field.mul m7 m7 in
-        let m5 = Field.mul m6 m7 in
-        let m1 = Field.mul (Field.mul m5 m6) m6 in
-        let n = List.fold_right [(Field.mul n7 m7); (Field.mul n6 m6); (Field.mul n5 m5); (Field.mul n1 m1)] ~f:Field.add ~init:n8 in
-        (* let n1 = Field.Constant.of_int 0xffffffff in *)
-        (* let l = (Field.Constant.unpack n1) in *)
-        (* let _ = List.iter l ~f:(fun a -> (Printf.printf "%s" (string_of_int (if a then 1 else 0)))) in *)
-        let l = (Field.unpack n1 ~length:((Field.size_in_bits) - 1)) in
-        let _ = List.iter l ~f:(fun a -> (Printf.printf "%s" (string_of_int (if a = Boolean.true_ then 1 else 0)))) in
-        let _ = (Printf.printf "=====\n" ) in
-        let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in
-        let modu a b =
-          Field.sub a (Field.mul (Field.div a b) b) in
+        (* let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in *)
+        (* n = n1, n2. The value of n = n1*2**128 + n2 *)
+        let n = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812735")), (Bigint.to_field (Bigint.of_decimal_string "251094175845612772866266697226726352209")) in
+        let two_128 = Bigint.to_bignum_bigint (Bigint.of_decimal_string "340282366920938463463374607431768211456") in
+        let bigint2u256 a =
+          let low = (Bignum_bigint.(%) a two_128) in
+          let high = (Bignum_bigint.(/) a two_128) in
+          let _ = Printf.printf "kkk %s %s %s" (Bignum_bigint.to_string a) (Bignum_bigint.to_string two_128) (Bignum_bigint.to_string high) in 
+          let low_field = (Bigint.to_field (Bigint.of_bignum_bigint low)) in
+          let high_field = (Bigint.to_field (Bigint.of_bignum_bigint high)) in
+          if high < two_128 then (high_field, low_field) else failwith "overflow" in
+        let u2562bigint a =
+          let low = (Bigint.to_bignum_bigint (Bigint.of_field (snd a))) in
+          let high = (Bigint.to_bignum_bigint (Bigint.of_field (fst a))) in
+          Bignum_bigint.(+) (Bignum_bigint.( * ) high two_128) low in
+            
         let rec gcd_ext a b =
-          if Field.zero = b then (Field.one, Field.zero, a)
-          else let s, t, g = gcd_ext b (modu a b) in
-              (t, Field.sub s (Field.mul (Field.div a b) t), g) in
+          if Bignum_bigint.zero = b then (Bignum_bigint.one, Bignum_bigint.zero, a)
+          else let s, t, g = gcd_ext b (Bignum_bigint.(%) a b) in
+              (t, Bignum_bigint.(-) s (Bignum_bigint.( * ) (Bignum_bigint.(/) a b) t), g) in
         let invmod a m =
-          let mk_pos x = if x < Field.zero then Field.add x m else x in
+          let mk_pos x = if x < Bignum_bigint.zero then Bignum_bigint.(+) x m else x in
           let i,_,r = gcd_ext a m in
-          if r = Field.one then mk_pos i else failwith "invmod" in
+          if r = Bignum_bigint.one then mk_pos i else failwith "invmod" in
 
         (* let ecdsa_p256_sig_check ~pubkey ~r ~s ~h =
           let inv_s =  *)
@@ -258,19 +255,13 @@ let%test_module "TLS Notary test" =
         let rpt = Ecc.sub (Ecc.scale_pack p s) pn in
         assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
         assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt)); *)
-        let test_s = Bigint.to_field (Bigint.of_decimal_string "86010965201271384069584565278387931067403690992144386669414930219218076294718") in
-        (* let test_inv_s = Bigint.to_field (Bigint.of_decimal_string "103687126430046668123400787655982508408237521893610743075748122051083635961644") in *)
-        let test_inv_s = Bigint.to_field (Bigint.of_decimal_string "555") in
-        let _ = Printf.printf "%d" (if test_s = Field.Constant.zero then 666 else 888) in
-        let test_s = Field.constant test_s in
-        let test_s_list = (Field.var_indices test_s) in
-        let _ = List.iter [3;4] ~f:(fun a -> (print_endline (string_of_int a))) in
-        let _ = List.iter test_s_list ~f:(fun a -> (print_endline (string_of_int a))) in
-        let l = (Field.Constant.unpack test_inv_s) in
-        let _ = List.iter l ~f:(fun a -> (Printf.printf "<<<< %s" (string_of_int (if a then 1 else 0)))) in
-        (* let _ = Printf.printf "aaaaaaaaaa %d \n" ) in *)
-        (* (let _ = (pp_print_list )) *)
-        assert_ (Snarky.Constraint.equal (invmod test_s (Field.constant n)) (Field.constant test_inv_s));
+        (* let test_s = Bigint.to_field (Bigint.of_decimal_string "86010965201271384069584565278387931067403690992144386669414930219218076294718") in
+         *)
+        let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in
+        let test_inv_s = (Bigint.to_field (Bigint.of_decimal_string "304709078428790393539962802780933455242")), (Bigint.to_field (Bigint.of_decimal_string "129215936266307296341781209091068309292")) in
+        let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) (u2562bigint n))) in
+        assert_ (Snarky.Constraint.equal (Field.constant (fst calc_inv_s)) (Field.constant (fst test_inv_s)));
+        assert_ (Snarky.Constraint.equal (Field.constant (snd calc_inv_s)) (Field.constant (snd test_inv_s)));
         ()
 
       module Public_input = Test.Public_input (Impl)
