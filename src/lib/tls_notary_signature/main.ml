@@ -201,6 +201,12 @@ let%test_module "TLS Notary test" =
               !result
             )
           ) in
+        let bytes_to_u256 bytes =
+          let bigints = Array.map bytes (fun a -> Bigint.to_bignum_bigint (Bigint.of_field (Option.value (Field.to_constant a) ~default:(failwith "no")))) in
+          let zero = Bignum_bigint.zero in
+          let value = Array.fold_right bigints ~init:zero ~f:(fun a init -> Bignum_bigint.(+) a (Bignum_bigint.( * ) init (Bignum_bigint.of_int 256))) in
+          bigint2u256 value
+        in
         (* ecdsa p-256 sig verfication *)
         (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
         (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
@@ -303,7 +309,8 @@ let%test_module "TLS Notary test" =
         let e = Sponge.squeeze in *)
 
         (* verify TlsNotary signature *)
-        let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in
+        (* let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in *)
+        let test_s = bytes_to_u256 (Array.sub esmk 32 32) in
         let test_inv_s = (Bigint.to_field (Bigint.of_decimal_string "304709078428790393539962802780933455242")), (Bigint.to_field (Bigint.of_decimal_string "129215936266307296341781209091068309292")) in
         let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) n)) in
         let pubkey1 = (Bigint.to_field (Bigint.of_decimal_string "3478230477595065492578757130346133765"), Bigint.to_field (Bigint.of_decimal_string "298476328221041686689973270619762274696")) in
