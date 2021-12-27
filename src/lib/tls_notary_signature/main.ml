@@ -75,7 +75,11 @@ let%test_module "TLS Notary test" =
         esmk: int array;
         (* signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t *)
         sha256_1: int array;
-        sha256_2: int array;
+        sha256_2: Field.Constant.t * Field.Constant.t;
+        esmk_r: Field.Constant.t * Field.Constant.t;
+        esmk_s: Field.Constant.t * Field.Constant.t;
+        notary_pubkey1: Field.Constant.t * Field.Constant.t;
+        notary_pubkey2: Field.Constant.t * Field.Constant.t;
       }
 
       let authentication ?witness (p, pn, q) () =
@@ -122,7 +126,6 @@ let%test_module "TLS Notary test" =
 
         (* TODO: when sha256 is implemented in circuit, these can be calculated *)
         let sha256_1 = int_array_witness ~length:32 (fun w -> w.sha256_1) in
-        let sha256_2 = int_array_witness ~length:32 (fun w -> w.sha256_2) in
         
         (* let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in *)
         (* n = n1, n2. The value of n = n1*2**128 + n2 *)
@@ -146,7 +149,8 @@ let%test_module "TLS Notary test" =
         let invmod a m =
           let mk_pos x = if x < Bignum_bigint.zero then Bignum_bigint.(+) x m else x in
           let i,_,r = gcd_ext a m in
-          if r = Bignum_bigint.one then mk_pos i else failwith "invmod" in
+          if r = Bignum_bigint.one then mk_pos i else failwith "invmod" 
+        in
         let curve_a = Bignum_bigint.of_int (-3) in
         let three = Bignum_bigint.of_int 3 in
         let neg1 = Bignum_bigint.of_int (-1) in
@@ -208,11 +212,6 @@ let%test_module "TLS Notary test" =
           bigint2u256 value
         in
         (* ecdsa p-256 sig verfication *)
-        (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
-        (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
-        (* s: (big_endian_bytes_to_int(esmk[32..64])) *)
-        (* h: sha256_2 *)
-        (* also need to check(ephemeral_pubkey, session_sig[0..32], session_sig[32..64], sha256_1) *)
         let ecdsa_p256_sig_check pubkey r s h =
           let inv_s = invmod s n in
           let u1 = Bignum_bigint.(%) (Bignum_bigint.( * ) h inv_s) n in
@@ -309,8 +308,9 @@ let%test_module "TLS Notary test" =
         let e = Sponge.squeeze in *)
 
         (* verify TlsNotary signature *)
-        (* let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in *)
-        let test_s = bytes_to_u256 (Array.sub esmk 32 32) in
+        let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in
+        (* doesn't work, Field.t array cannot be convert to field array because Field.t encapsulates generated r1cs constraints *)
+        (* let test_s = bytes_to_u256 (Array.sub esmk 32 32) in *)
         let test_inv_s = (Bigint.to_field (Bigint.of_decimal_string "304709078428790393539962802780933455242")), (Bigint.to_field (Bigint.of_decimal_string "129215936266307296341781209091068309292")) in
         let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) n)) in
         let pubkey1 = (Bigint.to_field (Bigint.of_decimal_string "3478230477595065492578757130346133765"), Bigint.to_field (Bigint.of_decimal_string "298476328221041686689973270619762274696")) in
@@ -323,9 +323,20 @@ let%test_module "TLS Notary test" =
         let h = (Bigint.to_field (Bigint.of_decimal_string "135657664323284924762060158345585070282"), Bigint.to_field (Bigint.of_decimal_string "249751897077652619569252134030795074929")) in
         let h = u2562bigint h in
         let s = u2562bigint test_s in
+
+        let sha256_2 = exists Typ.( field * field ) ~compute:(fun () -> (Option.value_exn witness).sha256_2) in
+        (* Doesn't work, because u2562bigint takes field * field as argument, but sha256_2 from witness is Field.t * Field.t *)
+        (* let sha256_2 = u2562bigint sha256_2 in *)
+        (* sha256_2 is the same one as h, but h is hard coded, and sha256_2 is taking from witness. *)
+
         assert_ (Snarky.Constraint.equal (Field.constant (fst calc_inv_s)) (Field.constant (fst test_inv_s)));
         assert_ (Snarky.Constraint.equal (Field.constant (snd calc_inv_s)) (Field.constant (snd test_inv_s)));
+        (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
+        (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
+        (* s: (big_endian_bytes_to_int(esmk[32..64])) *)
+        (* h: sha256_2 *)
         ecdsa_p256_sig_check pubkey r s h;
+        (* also need to check(ephemeral_pubkey, session_sig[0..32], session_sig[32..64], sha256_1) *)
         ()
 
       module Public_input = Test.Public_input (Impl)
@@ -343,11 +354,11 @@ let%test_module "TLS Notary test" =
       let keys = Impl.generate_keypair ~exposing:(input ()) authentication
 
       let proof =
-        (* let signature =
-          (* Just converting the signature from strings *)
-          let ((x, y), s) = Test.sign in
-          Bigint.((to_field (of_decimal_string x), to_field (of_decimal_string y)), to_field (of_decimal_string s))
-        in *)
+        let sha256_2 = Bigint.((to_field (of_decimal_string (fst Test.sha256_2)), to_field (of_decimal_string (snd Test.sha256_2)))) in
+        let esmk_r = Bigint.((to_field (of_decimal_string (fst Test.esmk_r)), to_field (of_decimal_string (snd Test.esmk_r)))) in
+        let esmk_s = Bigint.((to_field (of_decimal_string (fst Test.esmk_s)), to_field (of_decimal_string (snd Test.esmk_s)))) in
+        let notary_pubkey1 = Bigint.((to_field (of_decimal_string (fst Test.notary_pubkey1)), to_field (of_decimal_string (snd Test.notary_pubkey1)))) in
+        let notary_pubkey2 = Bigint.((to_field (of_decimal_string (fst Test.notary_pubkey2)), to_field (of_decimal_string (snd Test.notary_pubkey2)))) in
         Impl.prove (Impl.Keypair.pk keys) (input ())
           (authentication
              ~witness:{
@@ -372,11 +383,11 @@ let%test_module "TLS Notary test" =
                session_sig= Test.session_sig;
                esmk= Test.esmk;
                sha256_1= Test.sha256_1;
-               sha256_2= Test.sha256_2;
-               (* cipher_text= Test.ct;
-               encryption_key= Test.key;
-               iv= Test.iv;
-               signature *)
+               sha256_2;
+               esmk_r;
+               esmk_s;
+               notary_pubkey1;
+               notary_pubkey2;
              } )
           ()
           public_input
