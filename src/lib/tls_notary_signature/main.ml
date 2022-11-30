@@ -46,13 +46,40 @@ let%test_module "TLS Notary test" =
     = struct
       open Core
       open Impl
+      open Snarky.Snark_intf
 
       type witness =
       {
-        cipher_text: int array;
-        encryption_key : int array;
-        iv: int array;
-        signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t
+        (* cipher_text: int array; *)
+        server_records0: int array;
+        server_records1: int array;
+        client_cwk_share: int array;
+        client_civ_share: int array;
+        client_swk_share: int array;
+        client_siv_share: int array;
+        client_pms_share: int array;
+        client_req_cipher: int array;
+        notary_cwk_share: int array;
+        notary_civ_share: int array;
+        notary_swk_share: int array;
+        notary_siv_share: int array;
+        (* encryption_key : int array; *)
+        (* iv: int array; *)
+        notary_pms_share: int array;
+        notary_time: int array;
+        ephemeral_pubkey: int array;
+        ephemeral_pubkey_valid_from: int array;
+        ephemeral_pubkey_valid_until: int array;
+        notary_pubkey: int array;
+        session_sig: int array;
+        esmk: int array;
+        (* signature: (Field.Constant.t * Field.Constant.t) * Field.Constant.t *)
+        sha256_1: int array;
+        sha256_2: Field.Constant.t * Field.Constant.t;
+        esmk_r: Field.Constant.t * Field.Constant.t;
+        esmk_s: Field.Constant.t * Field.Constant.t;
+        notary_pubkey1: Field.Constant.t * Field.Constant.t;
+        notary_pubkey2: Field.Constant.t * Field.Constant.t;
       }
 
       let authentication ?witness (p, pn, q) () =
@@ -65,31 +92,163 @@ let%test_module "TLS Notary test" =
 
         Random.full_init [|7|];
 
-        (* CIPHERTEXT *)
-        (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
-        let ctl = Array.length Test.ct in
-        let bloks = (ctl + 15) / 16 in
-
         let int_array_witness ~length f =
           exists (Typ.array ~length Field.typ)
             ~compute:(fun () -> Array.map ~f:Field.Constant.of_int (f (Option.value_exn witness)))
         in
-        let ct =
-          int_array_witness ~length:ctl
-            (fun w -> w.cipher_text)
+        
+        let server_records0_len = Array.length Test.server_records0 in
+        let server_records1_len = Array.length Test.server_records1 in
+        let client_req_cipher_len = Array.length Test.client_req_cipher in
+        let ctl = server_records0_len - 8 in
+        let bloks = (ctl + 15) / 16 in
+
+        let server_records0 = int_array_witness ~length:server_records0_len (fun w -> w.server_records0) in
+        let server_records1 = int_array_witness ~length:server_records1_len (fun w -> w.server_records1) in
+        let client_cwk_share = int_array_witness ~length:16 (fun w -> w.client_cwk_share) in
+        let client_civ_share = int_array_witness ~length:4 (fun w -> w.client_civ_share) in
+        let client_swk_share = int_array_witness ~length:16 (fun w -> w.client_swk_share) in
+        let client_siv_share = int_array_witness ~length:4 (fun w -> w.client_siv_share) in
+        let client_pms_share = int_array_witness ~length:32 (fun w -> w.client_pms_share) in
+        let client_req_cipher = int_array_witness ~length:client_req_cipher_len (fun w -> w.client_req_cipher) in
+        let notary_cwk_share = int_array_witness ~length:16 (fun w -> w.notary_cwk_share) in
+        let notary_civ_share = int_array_witness ~length:4 (fun w -> w.notary_civ_share) in
+        let notary_swk_share = int_array_witness ~length:16 (fun w -> w.notary_swk_share) in
+        let notary_siv_share = int_array_witness ~length:4 (fun w -> w.notary_siv_share) in
+        let notary_pms_share = int_array_witness ~length:32 (fun w -> w.notary_pms_share) in
+        let notary_time = int_array_witness ~length:8 (fun w -> w.notary_time) in
+        let ephemeral_pubkey = int_array_witness ~length:65 (fun w -> w.ephemeral_pubkey) in
+        let ephemeral_pubkey_valid_from = int_array_witness ~length:4 (fun w -> w.ephemeral_pubkey_valid_from) in
+        let ephemeral_pubkey_valid_until = int_array_witness ~length:4 (fun w -> w.ephemeral_pubkey_valid_until) in
+        let notary_pubkey = int_array_witness ~length:65 (fun w -> w.notary_pubkey) in
+        let session_sig = int_array_witness ~length:64 (fun w -> w.session_sig) in
+        let esmk = int_array_witness ~length:64 (fun w -> w.esmk) in
+
+        (* TODO: when sha256 is implemented in circuit, these can be calculated *)
+        let sha256_1 = int_array_witness ~length:32 (fun w -> w.sha256_1) in
+        
+        (* let n = Bigint.to_field (Bigint.of_decimal_string "115792089210356248762697446949407573529996955224135760342422259061068512044369") in *)
+        (* n = n1, n2. The value of n = n1*2**128 + n2 *)
+        let two_128 = Bigint.to_bignum_bigint (Bigint.of_decimal_string "340282366920938463463374607431768211456") in
+        let bigint2u256 a =
+          let low = (Bignum_bigint.(%) a two_128) in
+          let high = (Bignum_bigint.(/) a two_128) in
+          let low_field = (Bigint.to_field (Bigint.of_bignum_bigint low)) in
+          let high_field = (Bigint.to_field (Bigint.of_bignum_bigint high)) in
+          if high < two_128 then (high_field, low_field) else failwith "overflow" in
+        let u2562bigint a =
+          let low = (Bigint.to_bignum_bigint (Bigint.of_field (snd a))) in
+          let high = (Bigint.to_bignum_bigint (Bigint.of_field (fst a))) in
+          Bignum_bigint.(+) (Bignum_bigint.( * ) high two_128) low in
+        let n = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812735")), (Bigint.to_field (Bigint.of_decimal_string "251094175845612772866266697226726352209")) in
+        let n = u2562bigint n in
+        let rec gcd_ext a b =
+          if Bignum_bigint.zero = b then (Bignum_bigint.one, Bignum_bigint.zero, a)
+          else let s, t, g = gcd_ext b (Bignum_bigint.(%) a b) in
+              (t, Bignum_bigint.(-) s (Bignum_bigint.( * ) (Bignum_bigint.(/) a b) t), g) in
+        let invmod a m =
+          let mk_pos x = if x < Bignum_bigint.zero then Bignum_bigint.(+) x m else x in
+          let i,_,r = gcd_ext a m in
+          if r = Bignum_bigint.one then mk_pos i else failwith "invmod" 
         in
+        let curve_a = Bignum_bigint.of_int (-3) in
+        let three = Bignum_bigint.of_int 3 in
+        let neg1 = Bignum_bigint.of_int (-1) in
+        let none_point = neg1, neg1 in
+        let two = Bignum_bigint.of_int 2 in
+        let curve_b = (Bigint.to_field (Bigint.of_decimal_string "120659686532307688880622900275402278588"), Bigint.to_field (Bigint.of_decimal_string "134402739885024356110349741191662297163")) in
+        let curve_b = u2562bigint curve_b in
+        let curve_p = (Bigint.to_field (Bigint.of_decimal_string "340282366841710300967557013911933812736"), Bigint.to_field (Bigint.of_decimal_string "79228162514264337593543950335")) in
+        let curve_p = u2562bigint curve_p in
+        let curve_g1 = (Bigint.to_field (Bigint.of_decimal_string "142351076643242424036947696745370108146"), Bigint.to_field (Bigint.of_decimal_string "158196253924825180976708252118688514710")) in
+        let curve_g1 = u2562bigint curve_g1 in
+        let curve_g2 = (Bigint.to_field (Bigint.of_decimal_string "106189019677135556241083198551104658966"), Bigint.to_field (Bigint.of_decimal_string "58227458300524063135732676749760090613")) in
+        let curve_g2 = u2562bigint curve_g2 in
+        let curve_g = (curve_g1, curve_g2) in
+
+        let point_add point1 point2 =
+          if point1 = none_point then point2 else (
+            if point2 = none_point then point1 else (
+              let x1, y1 = point1 in
+              let x2, y2 = point2 in
+              if (x1 = x2) && (y1 <> y2) then none_point else (
+                let m = if x1 = x2 then 
+                  (Bignum_bigint.( * ) 
+                    (Bignum_bigint.( + ) 
+                      (Bignum_bigint.( * ) (Bignum_bigint.( * ) x1 x1) three) 
+                      curve_a)
+                    (invmod (Bignum_bigint.( * ) two y1) curve_p)) else
+                  (Bignum_bigint.( * )
+                    (Bignum_bigint.(-) y1 y2)
+                    (invmod (Bignum_bigint.(-) x1 x2) curve_p)) in
+                let x3 = (Bignum_bigint.(-) (Bignum_bigint.(-) (Bignum_bigint.( * ) m m) x1) x2) in
+                let y3 = (Bignum_bigint.(+) y1 (Bignum_bigint.( * ) m (Bignum_bigint.(-) x3 x1))) in
+                (Bignum_bigint.(%) x3 curve_p), (Bignum_bigint.(%) (Bignum_bigint.(-) Bignum_bigint.zero y3) curve_p)
+              )
+            )
+          ) in
+        let point_neg point =
+          if point = none_point then none_point else
+            let x, y = point in
+            (x, (Bignum_bigint.(%) (Bignum_bigint.neg y) curve_p)) in
+        let rec scalar_mult k point =
+          if Bignum_bigint.(%) k n = Bignum_bigint.zero || point = none_point then none_point else (
+            if Bignum_bigint.(<) k Bignum_bigint.zero then scalar_mult (Bignum_bigint.neg k) (point_neg point) else (
+              let result = ref none_point in
+              let addend = ref point in
+              let kk = ref k in
+              while Bignum_bigint.(>) !kk Bignum_bigint.zero do
+                if (Bignum_bigint.(%) !kk two) = Bignum_bigint.one then result := point_add !result !addend else ();
+                addend := point_add !addend !addend;
+                kk := (Bignum_bigint.(/) !kk two)
+              done;
+              !result
+            )
+          ) in
+        let bytes_to_u256 bytes =
+          let bigints = Array.map bytes (fun a -> Bigint.to_bignum_bigint (Bigint.of_field (Option.value (Field.to_constant a) ~default:(failwith "no")))) in
+          let zero = Bignum_bigint.zero in
+          let value = Array.fold_right bigints ~init:zero ~f:(fun a init -> Bignum_bigint.(+) a (Bignum_bigint.( * ) init (Bignum_bigint.of_int 256))) in
+          bigint2u256 value
+        in
+        (* ecdsa p-256 sig verfication *)
+        let ecdsa_p256_sig_check pubkey r s h =
+          let inv_s = invmod s n in
+          let u1 = Bignum_bigint.(%) (Bignum_bigint.( * ) h inv_s) n in
+          let u2 = Bignum_bigint.(%) (Bignum_bigint.( * ) r inv_s) n in
+          let p = point_add (scalar_mult u1 curve_g) (scalar_mult u2 pubkey) in
+          let res = Bignum_bigint.(%) (fst p) n in
+          let r = bigint2u256 r in
+          let res = bigint2u256 res in (
+          assert_ (Snarky.Constraint.equal (Field.constant (fst res)) (Field.constant (fst r)));
+          assert_ (Snarky.Constraint.equal (Field.constant (snd res)) (Field.constant (snd r)));
+          )
+        in
+
+        (* CIPHERTEXT *)
+        (*let ctl = Array.length (Option.value_exn witness).cipher_text in*)
+        (* let ctl = Array.length Test.ct - 8 in *)
+        (* let ct =
+          int_array_witness ~length:ctl
+            (fun w -> w.ct)
+        in *)
+        let ct = Array.sub server_records0 8 ctl in
 
         (* AES SERVER ENCRYPTION KEY *)
-        let key = int_array_witness ~length:16 (fun w -> w.encryption_key) in
+        let key = Array.mapi client_swk_share ~f:(fun i x -> Bytes.xor x notary_swk_share.(i)) in
 
         (* AES INITIALIZATION VECTOR *)
-        let iv = int_array_witness ~length:16 (fun w -> w.iv) in
+        let iv_first4 = Array.mapi client_siv_share ~f:(fun i x -> Bytes.xor x notary_siv_share.(i)) in
+        let iv_next8 = Array.sub server_records0 0 8 in
+        let iv = Array.concat [iv_first4; iv_next8; [|Field.zero; Field.zero; Field.zero; Field.zero|]] in
 
         (* TLS NOTARY SIGNATURE *)
-        let (rc, s) =
+        (* let (rc, s) =
           exists Typ.( (field * field) * field)
             ~compute:(fun () -> (Option.value_exn witness).signature)
-        in
+        in *)
+        let s1 = session_sig in
+        let s2 = esmk in
 
         (* compute AES key schedule *)
         let ks = Block.expandKey key in
@@ -112,11 +271,11 @@ let%test_module "TLS Notary test" =
         )) in
 
         (* decrypt score ciphertext into plaintext and decode *)
-        let score = let offset = ctl-9-(bloks-ptdl1)*16 in Array.mapi (Array.sub ct (ctl-9) 3)
-          ~f:(fun i x -> Bytes.asciiDigit (Bytes.xor ec.((offset+i)/16).((offset+i)%16) x)) in
+        (* let score = let offset = ctl-9-(bloks-ptdl1)*16 in Array.mapi (Array.sub ct (ctl-9) 3)
+          ~f:(fun i x -> Bytes.asciiDigit (Bytes.xor ec.((offset+i)/16).((offset+i)%16) x)) in *)
         
         (* check the score *)
-        Bytes.assertScore Field.(score.(0) * (of_int 100) + score.(1) * (of_int 10) + score.(2));
+        (* Bytes.assertScore Field.(score.(0) * (of_int 100) + score.(1) * (of_int 10) + score.(2)); *)
 
         (* pad ciphertext to the block boundary *)
         let ctp = Array.append ct (Array.init (bloks*16-ctl) ~f:(fun _ -> Field.zero)) in
@@ -144,15 +303,40 @@ let%test_module "TLS Notary test" =
         done;
 *)
         (* hash the data to be signed *)
-        let hb = Array.map ~f:(fun x -> Bytes.b16tof x) [|key; iv; at|] in
+        (* let hb = Array.map ~f:(fun x -> Bytes.b16tof x) [|key; iv; at|] in
         Array.iter ~f:(fun x -> Sponge.absorb x) (Array.append hb [|fst rc; snd rc;|]);
-        let e = Sponge.squeeze in
+        let e = Sponge.squeeze in *)
 
         (* verify TlsNotary signature *)
-        let lpt = Ecc.add (Ecc.mul q e) rc in
-        let rpt = Ecc.sub (Ecc.scale_pack p s) pn in
-        assert_ (Snarky.Constraint.equal (fst lpt) (fst lpt));
-        assert_ (Snarky.Constraint.equal (snd rpt) (snd rpt));
+        let test_s = (Bigint.to_field (Bigint.of_decimal_string "252763509257167167559539568902980276620")), (Bigint.to_field (Bigint.of_decimal_string "108392074650980745770071854956543335998")) in
+        (* doesn't work, Field.t array cannot be convert to field array because Field.t encapsulates generated r1cs constraints *)
+        (* let test_s = bytes_to_u256 (Array.sub esmk 32 32) in *)
+        let test_inv_s = (Bigint.to_field (Bigint.of_decimal_string "304709078428790393539962802780933455242")), (Bigint.to_field (Bigint.of_decimal_string "129215936266307296341781209091068309292")) in
+        let calc_inv_s = (bigint2u256 (invmod (u2562bigint test_s) n)) in
+        let pubkey1 = (Bigint.to_field (Bigint.of_decimal_string "3478230477595065492578757130346133765"), Bigint.to_field (Bigint.of_decimal_string "298476328221041686689973270619762274696")) in
+        let pubkey1 = u2562bigint pubkey1 in
+        let pubkey2 = (Bigint.to_field (Bigint.of_decimal_string "249584731643533523644223431285730545692"), Bigint.to_field (Bigint.of_decimal_string "280091565973380171059997404961529417584")) in
+        let pubkey2 = u2562bigint pubkey2 in
+        let pubkey = pubkey1, pubkey2 in
+        let r = (Bigint.to_field (Bigint.of_decimal_string "137461282908173511784463256194511615133"), Bigint.to_field (Bigint.of_decimal_string "217492331638074537544279972555531982273")) in
+        let r = u2562bigint r in
+        let h = (Bigint.to_field (Bigint.of_decimal_string "135657664323284924762060158345585070282"), Bigint.to_field (Bigint.of_decimal_string "249751897077652619569252134030795074929")) in
+        let h = u2562bigint h in
+        let s = u2562bigint test_s in
+
+        let sha256_2 = exists Typ.( field * field ) ~compute:(fun () -> (Option.value_exn witness).sha256_2) in
+        (* Doesn't work, because u2562bigint takes field * field as argument, but sha256_2 from witness is Field.t * Field.t *)
+        (* let sha256_2 = u2562bigint sha256_2 in *)
+        (* sha256_2 is the same one as h, but h is hard coded, and sha256_2 is taking from witness. *)
+
+        assert_ (Snarky.Constraint.equal (Field.constant (fst calc_inv_s)) (Field.constant (fst test_inv_s)));
+        assert_ (Snarky.Constraint.equal (Field.constant (snd calc_inv_s)) (Field.constant (snd test_inv_s)));
+        (* pubkey: (big_endian_bytes_to_int(notary_pubkey[1..33]), big_endian_bytes_to_int(notary_pubkey([33..65])) *)
+        (* r: (big_endian_bytes_to_int(esmk[0..32])) *)
+        (* s: (big_endian_bytes_to_int(esmk[32..64])) *)
+        (* h: sha256_2 *)
+        ecdsa_p256_sig_check pubkey r s h;
+        (* also need to check(ephemeral_pubkey, session_sig[0..32], session_sig[32..64], sha256_1) *)
         ()
 
       module Public_input = Test.Public_input (Impl)
@@ -170,18 +354,40 @@ let%test_module "TLS Notary test" =
       let keys = Impl.generate_keypair ~exposing:(input ()) authentication
 
       let proof =
-        let signature =
-          (* Just converting the signature from strings *)
-          let ((x, y), s) = Test.sign in
-          Bigint.((to_field (of_decimal_string x), to_field (of_decimal_string y)), to_field (of_decimal_string s))
-        in
+        let sha256_2 = Bigint.((to_field (of_decimal_string (fst Test.sha256_2)), to_field (of_decimal_string (snd Test.sha256_2)))) in
+        let esmk_r = Bigint.((to_field (of_decimal_string (fst Test.esmk_r)), to_field (of_decimal_string (snd Test.esmk_r)))) in
+        let esmk_s = Bigint.((to_field (of_decimal_string (fst Test.esmk_s)), to_field (of_decimal_string (snd Test.esmk_s)))) in
+        let notary_pubkey1 = Bigint.((to_field (of_decimal_string (fst Test.notary_pubkey1)), to_field (of_decimal_string (snd Test.notary_pubkey1)))) in
+        let notary_pubkey2 = Bigint.((to_field (of_decimal_string (fst Test.notary_pubkey2)), to_field (of_decimal_string (snd Test.notary_pubkey2)))) in
         Impl.prove (Impl.Keypair.pk keys) (input ())
           (authentication
              ~witness:{
-               cipher_text= Test.ct;
-               encryption_key= Test.key;
-               iv= Test.iv;
-               signature
+               server_records0= Test.server_records0;
+               server_records1= Test.server_records1;
+               client_cwk_share= Test.client_cwk_share;
+               client_civ_share= Test.client_civ_share;
+               client_swk_share= Test.client_swk_share;
+               client_siv_share= Test.client_siv_share;
+               client_pms_share= Test.client_pms_share;
+               client_req_cipher= Test.client_req_cipher;
+               notary_cwk_share= Test.notary_cwk_share;
+               notary_civ_share= Test.notary_civ_share;
+               notary_swk_share= Test.notary_swk_share;
+               notary_siv_share= Test.notary_siv_share;
+               notary_pms_share= Test.notary_pms_share;
+               notary_time= Test.notary_time;
+               ephemeral_pubkey= Test.ephemeral_pubkey;
+               ephemeral_pubkey_valid_from= Test.ephemeral_pubkey_valid_from;
+               ephemeral_pubkey_valid_until= Test.ephemeral_pubkey_valid_until;
+               notary_pubkey= Test.notary_pubkey;
+               session_sig= Test.session_sig;
+               esmk= Test.esmk;
+               sha256_1= Test.sha256_1;
+               sha256_2;
+               esmk_r;
+               esmk_s;
+               notary_pubkey1;
+               notary_pubkey2;
              } )
           ()
           public_input

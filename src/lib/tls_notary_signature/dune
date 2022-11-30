@@ -15,4 +15,5 @@
     snarky_curve
     snarky
     key_cache
-    core_kernel ))
+    core_kernel
+    bignum ))
